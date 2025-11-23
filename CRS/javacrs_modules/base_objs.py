@@ -428,7 +428,7 @@ class BeepSeed:
         for frame in stack_frames[::-1]:
             frame_str = frame.get("frame_str", "")
 
-            # Stop when we find the codemarker instrumentation frame
+            # 当找到代码标记器插桩帧时停止
             if (
                 "com.code_intelligence.jazzer.api.Jazzer.reportCodeMarkerHit(Jazzer.java:229)"
                 in frame_str
@@ -440,17 +440,35 @@ class BeepSeed:
         return filtered_frames
 
     def get_bytes(self) -> bytes:
-        """Get the data bytes from the hex string."""
+        """
+        从十六进制字符串获取字节数据
+        
+        Returns:
+            bytes: 输入数据的字节表示
+        """
         if self.data_hex_str:
             return bytes.fromhex(self.data_hex_str)
         return b""
 
     def redis_key(self) -> str:
-        """Get a unique ID for the BeepSeed."""
+        """
+        生成Redis缓存键
+        
+        Returns:
+            str: 唯一的Redis键字符串
+            
+        格式：
+            beep#{data_sha1}#{coord.redis_key()}
+        """
         return f"beep#{self.data_sha1}#{self.coord.redis_key()}"
 
     def id(self) -> str:
-        """Get a unique ID for the BeepSeed."""
+        """
+        生成唯一ID
+        
+        Returns:
+            str: 唯一标识符字符串
+        """
         return f"{self.coord.id()}.{self.data_sha1}"
 
     def __hash__(self):
@@ -478,7 +496,29 @@ class BeepSeed:
 
 
 class Crash:
-    """Represents a crash report."""
+    """
+    崩溃报告类
+    
+    表示在Java代码执行过程中发现的崩溃信息，包含崩溃位置、类型、消息等。
+    是安全测试中发现实际漏洞的重要指标。
+    
+    属性：
+        harness_name (str): 测试用例名称
+        coord (InsnCoordinate): 崩溃位置的指令坐标
+        sanitizer (str): 使用的 sanitizer 类型
+        crash_msg (str): 崩溃消息
+        frames (List[str]): 崩溃栈帧列表
+        dedup_token (str): 去重令牌
+        artifact_name (str): 崩溃产物名称
+        artifact_path (str): 崩溃产物路径
+        artifact_hexstr (str): 崩溃产物的十六进制表示
+    
+    用途：
+        - 漏洞验证
+        - 崩溃去重
+        - 安全报告生成
+        - 误报过滤
+    """
 
     def __init__(
         self,
@@ -491,6 +531,19 @@ class Crash:
         artifact_name: str,
         artifact_path: str,
     ):
+        """
+        初始化崩溃报告
+        
+        Args:
+            harness_name: 触发崩溃的测试用例名称
+            coord: 崩溃位置的指令坐标
+            sanitizer: 使用的安全检测器类型
+            crash_msg: 崩溃消息内容
+            frames: 崩溃栈帧列表
+            dedup_token: 用于崩溃去重的令牌
+            artifact_name: 崩溃产物文件名称
+            artifact_path: 崩溃产物文件路径
+        """
         self.harness_name = harness_name
         self.coord = coord
         self.sanitizer = sanitizer
@@ -526,7 +579,28 @@ class Crash:
 
 
 class Sinkpoint:
-    """Represents a sink point in the Java code where vulnerabilities might be exploited."""
+    """
+    汇点类
+    
+    表示Java代码中可能存在安全漏洞的关键位置（汇点），是安全测试的核心概念。
+    汇点综合了静态分析结果、动态执行信息、崩溃报告等多维度的安全信息。
+    
+    属性：
+        coord (InsnCoordinate): 汇点的指令坐标
+        type (Set[str]): 汇点类型集合
+        in_diff (bool): 是否在差异分析范围内
+        sarif_reports (Dict[UUID, CRSJAVASarifReport]): SARIF报告字典
+        beepseeds (Set[BeepSeed]): 到达此汇点的种子集合
+        crashes (Set[Any]): 相关的崩溃集合
+        ana_reachability (Dict[str, bool]): 可访问性分析结果
+        ana_exploitability (Dict[str, bool]): 可利用性分析结果
+    
+    用途：
+        - 漏洞位置管理
+        - 安全风险评估
+        - 测试优先级排序
+        - 漏洞利用验证
+    """
 
     def __init__(
         self,
@@ -539,6 +613,24 @@ class Sinkpoint:
         ana_reachability: Dict[str, bool] = None,
         ana_exploitability: Dict[str, bool] = None,
     ):
+        """
+        初始化汇点
+        
+        Args:
+            coord: 汇点的指令坐标
+            type: 汇点类型集合
+            in_diff: 是否在差异分析范围内
+            sarif_reports: 相关的SARIF报告集合
+            beepseeds: 到达此汇点的测试种子集合
+            crashes: 相关的崩溃集合
+            ana_reachability: 可访问性分析结果字典
+            ana_exploitability: 可利用性分析结果字典
+            
+        数据验证：
+            - 类型检查
+            - 可访问性结果类型验证
+            - 可利用性结果类型验证
+        """
         self.coord = coord
         self.type: Set[str] = set(type)
         self.in_diff = in_diff
@@ -549,7 +641,7 @@ class Sinkpoint:
         self.crashes: Set[Any] = set(crashes or set())
         self.ana_reachability = dict(ana_reachability or dict())
         self.ana_exploitability = dict(ana_exploitability or dict())
-        # asserts
+        # 断言验证
         for t in self.type:
             assert isinstance(t, str), f"Invalid type in Sinkpoint: {t}"
         for k, v in self.ana_reachability.items():
@@ -560,17 +652,39 @@ class Sinkpoint:
             assert isinstance(v, bool), f"Invalid type in Sinkpoint: {v}"
 
     def data_n_hash(self) -> Tuple[str, str]:
-        """Generate a hash based only on content values for cross-process comparisons."""
+        """
+        生成基于内容的哈希值用于跨进程比较
+        
+        Returns:
+            Tuple[str, str]: (内容字符串, MD5哈希值)
+            
+        用途：
+            - 跨进程数据同步
+            - 缓存键生成
+            - 数据一致性检查
+        """
         content = json.dumps(self.to_dict(), sort_keys=True)
         return content, hashlib.md5(content.encode()).hexdigest()
 
     @classmethod
     def frm_dict(cls, sink_dict: Dict[str, Any]) -> "Sinkpoint":
-        """Create a sinkpoint from a dictionary."""
+        """
+        从字典创建汇点对象
+        
+        Args:
+            sink_dict: 包含汇点信息的字典
+            
+        Returns:
+            Sinkpoint: 创建的汇点对象
+            
+        特殊处理：
+            - 支持直接使用sink_dict作为coord_dict（用于llmpocgen和静态分析结果）
+            - 自动添加mark_desc到类型集合
+        """
         coord_dict = sink_dict.get("coord", {})
         if len(coord_dict) == 0:
-            # NOTE: Try use sink_dict directly if no coord key is provided
-            # This is for llmpocgen & static-analysis results
+            # 注意：如果没有提供coord键，尝试直接使用sink_dict
+            # 这适用于llmpocgen和静态分析结果
             coord_dict = sink_dict
         sarif_reports = {
             CRSJAVASarifReport.frm_dict(report)
@@ -596,7 +710,19 @@ class Sinkpoint:
 
     @classmethod
     def frm_beepseed(cls, beepseed: BeepSeed) -> "Sinkpoint":
-        """Create a sinkpoint based on the beepseed."""
+        """
+        从BeepSeed创建汇点对象
+        
+        Args:
+            beepseed: BeepSeed对象
+            
+        Returns:
+            Sinkpoint: 基于BeepSeed创建的汇点对象
+            
+        用途：
+            - 快速汇点创建
+            - 动态执行结果转换
+        """
         return cls(
             coord=beepseed.coord,
             type={beepseed.coord.mark_desc},
@@ -610,7 +736,19 @@ class Sinkpoint:
 
     @classmethod
     def frm_crash(cls, crash: Crash) -> "Sinkpoint":
-        """Create a sinkpoint based on the crash."""
+        """
+        从Crash创建汇点对象
+        
+        Args:
+            crash: Crash对象
+            
+        Returns:
+            Sinkpoint: 基于Crash创建的汇点对象
+            
+        用途：
+            - 崩溃结果转换
+            - 漏洞验证
+        """
         return cls(
             coord=crash.coord,
             type={crash.coord.mark_desc},
@@ -623,7 +761,16 @@ class Sinkpoint:
         )
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert the sinkpoint to a JSON-serializable dictionary."""
+        """
+        转换为JSON可序列化的字典
+        
+        Returns:
+            dict: 包含汇点完整信息的字典，数据已排序
+            
+        特殊字段：
+            reached: 是否被访问过
+            exploited: 是否已被利用（产生崩溃）
+        """
         sorted_types = list(self.type)
         sorted_types.sort()
         sorted_sarif_ids = list(self.sarif_reports.keys())
@@ -647,7 +794,21 @@ class Sinkpoint:
     def mark_as_sarif_target_if_should(
         self, logger, report: CRSJAVASarifReport
     ) -> bool:
-        """Check and mark the sinkpoint as a SARIF target if should."""
+        """
+        检查并标记汇点作为SARIF目标
+        
+        Args:
+            logger: 日志记录器
+            report: SARIF报告
+            
+        Returns:
+            bool: 是否成功标记为SARIF目标
+            
+        验证逻辑：
+            - 检查代码位置的有效性
+            - 验证类名匹配
+            - 检查行号范围
+        """
         marked_locs = (
             self.sarif_reports[report.sarif_id].code_locations
             if report.sarif_id in self.sarif_reports
@@ -670,9 +831,9 @@ class Sinkpoint:
             if self.coord.line_num == -1:
                 continue
             if loc.function.class_name != self.coord.class_name:
-                # NOTE: we assume sarif report always use . in class_name
+                # 注意：假设SARIF报告始终使用点分隔的类名
                 continue
-            # Same class, now check if fall in line num scope
+            # 同一类，现在检查是否在行号范围内
             start_line = loc.start_line
             end_line = loc.end_line if loc.end_line else loc.start_line
             if start_line <= self.coord.line_num <= end_line:
@@ -688,7 +849,23 @@ class Sinkpoint:
         return marked
 
     def merge(self, sp: "Sinkpoint") -> bool:
-        """Update the sinkpoint with another sinkpoint's info, True => merge succ."""
+        """
+        更新汇点信息
+        
+        Args:
+            sp: 要合并的另一个汇点
+            
+        Returns:
+            bool: 是否成功合并新信息
+            
+        合并策略：
+            - 坐标必须相同才能合并
+            - 合并类型集合
+            - 更新差异分析标记
+            - 合并SARIF报告
+            - 添加新的测试种子和崩溃
+            - 解决分析结果冲突
+        """
         updated = False
         if self.coord != sp.coord:
             return updated
@@ -718,7 +895,7 @@ class Sinkpoint:
                 self.ana_reachability[h] = rslt
                 updated = True
             elif self.ana_reachability[h] != rslt:
-                # NOTE: we directly remove the conflict
+                # 注意：直接移除冲突的结果
                 del self.ana_reachability[h]
                 updated = True
         for h, rslt in sp.ana_exploitability.items():
@@ -726,38 +903,83 @@ class Sinkpoint:
                 self.ana_exploitability[h] = rslt
                 updated = True
             elif self.ana_exploitability[h] != rslt:
-                # NOTE: we directly remove the conflict
+                # 注意：直接移除冲突的结果
                 del self.ana_exploitability[h]
                 updated = True
         return updated
 
     def redis_key(self) -> str:
-        """Get a Redis key for the Sinkpoint."""
+        """
+        生成Redis缓存键
+        
+        Returns:
+            str: Redis缓存键字符串
+        """
         return f"sink#{self.coord.redis_key()}"
 
     def is_in_stack_frames(self, frames: List[str]) -> bool:
-        """Check if this sinkpoint appears in the given stack frames."""
+        """
+        检查汇点是否在指定的栈帧中
+        
+        Args:
+            frames: 栈帧字符串列表
+            
+        Returns:
+            bool: 是否在任意栈帧中
+        """
         return self.coord.is_in_stack_frames(frames)
 
     def exploited(self) -> bool:
-        """Return True if the sinkpoint has been exploited (has crashes)."""
+        """
+        检查汇点是否已被利用
+        
+        Returns:
+            bool: 是否产生过崩溃
+        """
         return len(self.crashes) > 0
 
     def reached(self) -> bool:
-        """Return True if the sinkpoint has been reached (has beepseeds)."""
-        # In case the beepseed update is delayed
+        """
+        检查汇点是否已被访问
+        
+        Returns:
+            bool: 是否被访问过
+            
+        注意：
+            如果种子更新延迟，也要考虑崩溃情况
+        """
+        # 如果种子更新延迟的情况
         return len(self.beepseeds) > 0 or len(self.crashes) > 0
 
     def in_prio(self) -> bool:
-        """Check if the sinkpoint is in priority (in_diff/sarif & not exploited)."""
+        """
+        检查汇点是否在优先级范围内
+        
+        优先级条件：
+            - 未被利用（无崩溃）
+            - 且在差异分析范围内或有关联的SARIF报告
+            
+        Returns:
+            bool: 是否在优先级范围内
+        """
         return len(self.crashes) == 0 and (self.in_diff or len(self.sarif_reports) > 0)
 
     def __str__(self) -> str:
-        """String representation of the sinkpoint."""
+        """
+        汇点的字符串表示
+        
+        Returns:
+            str: 包含汇点基本信息的字符串
+        """
         return f"sink @ <{self.coord}, type:{self.type} {self.in_diff}, beepseeds: {len(self.beepseeds)}, sarif_reports: {len(self.sarif_reports)}, reached: {self.reached()}, exploited: {self.exploited()}>"
 
     def __repr__(self) -> str:
-        """Detailed string representation of the sinkpoint."""
+        """
+        汇点的详细字符串表示
+        
+        Returns:
+            str: 包含汇点详细信息的字符串
+        """
         return (
             f"Sinkpoint(coord={self.coord}, "
             f"type='{self.type}', "
@@ -767,13 +989,39 @@ class Sinkpoint:
 
 
 class CallGraphSource:
-    """Represents a call graph source."""
+    """
+    调用图源类
+    
+    表示调用图数据的来源信息，用于追踪不同工具生成的调用图数据。
+    
+    属性：
+        tool (str): 工具名称（如joern、soot、sarif）
+        version (str): 工具版本信息
+    
+    用途：
+        - 调用图数据源追踪
+        - 多工具结果整合
+        - 数据质量评估
+    """
 
     def __init__(self, tool: str, version: str):
+        """
+        初始化调用图源
+        
+        Args:
+            tool: 工具名称
+            version: 工具版本
+        """
         self.tool = tool
         self.version = version
 
     def to_dict(self) -> Dict[str, Any]:
+        """
+        转换为字典格式
+        
+        Returns:
+            dict: 包含源信息的字典
+        """
         return {
             "tool": self.tool,
             "version": self.version,
@@ -781,6 +1029,15 @@ class CallGraphSource:
 
     @classmethod
     def frm_dict(cls, data: Dict[str, Any]) -> "CallGraphSource":
+        """
+        从字典创建调用图源对象
+        
+        Args:
+            data: 包含源信息的字典
+            
+        Returns:
+            CallGraphSource: 创建的调用图源对象
+        """
         return cls(
             tool=data["tool"],
             version=data["version"],
@@ -791,16 +1048,44 @@ class CallGraphSource:
 
 
 class HarnessDiffReachability:
-    """Represents diff analysis result of one harness."""
+    """
+    工具差异可访问性类
+    
+    表示单个测试用例的差异分析结果，包含可访问性状态和调用图源信息。
+    
+    属性：
+        harness_name (str): 测试用例名称
+        reachable (bool): 是否可访问
+        cg_source (set[CallGraphSource]): 调用图源集合
+    
+    用途：
+        - 差异分析结果管理
+        - 可访问性状态跟踪
+        - 多工具结果整合
+    """
 
     def __init__(
         self, harness_name: str, reachable: bool, cg_source: set[CallGraphSource]
     ):
+        """
+        初始化工具差异可访问性
+        
+        Args:
+            harness_name: 测试用例名称
+            reachable: 可访问性状态
+            cg_source: 调用图源集合
+        """
         self.harness_name = harness_name
         self.reachable = reachable
         self.cg_source = cg_source
 
     def to_dict(self) -> Dict[str, Any]:
+        """
+        转换为字典格式
+        
+        Returns:
+            dict: 包含可访问性信息的字典
+        """
         return {
             "harness_name": self.harness_name,
             "reachable": self.reachable,
@@ -809,6 +1094,15 @@ class HarnessDiffReachability:
 
     @classmethod
     def frm_dict(cls, data: Dict[str, Any]) -> "HarnessDiffReachability":
+        """
+        从字典创建可访问性对象
+        
+        Args:
+            data: 包含可访问性信息的字典
+            
+        Returns:
+            HarnessDiffReachability: 创建的可访问性对象
+        """
         cg_source = [CallGraphSource.frm_dict(source) for source in data["cg_source"]]
         return cls(
             harness_name=data["harness_name"],
@@ -817,7 +1111,20 @@ class HarnessDiffReachability:
         )
 
     def merge(self, diff: "HarnessDiffReachability") -> bool:
-        """Merge another HarnessDiffReachability into this one."""
+        """
+        合并另一个可访问性对象
+        
+        Args:
+            diff: 要合并的可访问性对象
+            
+        Returns:
+            bool: 是否成功合并新信息
+            
+        合并策略：
+            - 测试用例名称必须相同
+            - 可访问性状态使用逻辑或
+            - 调用图源信息使用集合并集
+        """
         if self.harness_name != diff.harness_name:
             return False
         self.reachable = self.reachable or diff.reachable
@@ -826,28 +1133,73 @@ class HarnessDiffReachability:
 
 
 class DiffReachabilityReport:
-    """Represents a diff analysis result."""
+    """
+    差异可访问性报告类
+    
+    管理多个测试用例的差异分析结果，提供完整的可访问性状态报告。
+    支持从多种数据源创建和合并报告。
+    
+    属性：
+        h_reach_list (List[HarnessDiffReachability]): 可访问性分析结果列表
+    
+    用途：
+        - 差异分析结果整合
+        - 可访问性状态报告
+        - 多工具结果比较
+        - 测试优先级排序
+    """
 
     def __init__(self, h_reach_list: List[HarnessDiffReachability] = None):
+        """
+        初始化差异可访问性报告
+        
+        Args:
+            h_reach_list: 可访问性分析结果列表
+        """
         self.h_reach_list = copy.deepcopy(h_reach_list) if h_reach_list else []
 
     def to_dict(self) -> Dict[str, Any]:
+        """
+        转换为字典格式
+        
+        Returns:
+            dict: 以测试用例名称为键的字典
+        """
         return {
             h_reach.harness_name: h_reach.to_dict() for h_reach in self.h_reach_list
         }
 
     def to_json(self) -> str:
-        """Convert the DiffReachabilityReport to a JSON string."""
+        """
+        转换为JSON字符串
+        
+        Returns:
+            str: 格式化的JSON字符串
+        """
         return json.dumps(self.to_dict(), indent=2)
 
     def get_reachable_harnesses(self) -> List[str]:
-        """Get the list of reachable harnesses."""
+        """
+        获取可访问的测试用例列表
+        
+        Returns:
+            List[str]: 可访问的测试用例名称列表
+        """
         return [
             h_reach.harness_name for h_reach in self.h_reach_list if h_reach.reachable
         ]
 
     def from_all_cg_sources(self) -> bool:
-        """Check if all call graph sources are the same."""
+        """
+        检查是否包含所有调用图源类型
+        
+        Returns:
+            bool: 是否包含joern、soot、sarif三种工具
+            
+        用于：
+            - 数据完整性验证
+            - 报告质量评估
+        """
         has_joern, has_soot, has_sarif = False, False, False
         for h_reach in self.h_reach_list:
             if h_reach.cg_source.tool == "joern":
@@ -860,11 +1212,35 @@ class DiffReachabilityReport:
 
     @classmethod
     def frm_dict(cls, data: Dict[str, Any]) -> "DiffReachabilityReport":
+        """
+        从字典创建报告对象
+        
+        Args:
+            data: 包含报告数据的字典
+            
+        Returns:
+            DiffReachabilityReport: 创建的报告对象
+        """
         h_reach_list = [HarnessDiffReachability.frm_dict(h) for h in data.values()]
         return cls(h_reach_list=h_reach_list)
 
     @classmethod
     def frm_llmpocgen(cls, blackboard: Dict[str, Any]) -> "DiffReachabilityReport":
+        """
+        从LLM POC生成器的blackboard创建报告
+        
+        Args:
+            blackboard: 包含LLM POC生成结果的blackboard字典
+            
+        Returns:
+            DiffReachabilityReport: 创建的报告对象
+            
+        数据源：
+            - merged_joern_cg: Joern调用图
+            - merged_soot_cg: Soot调用图
+            - merged_sarif_cg: SARIF调用图
+            - diff.harnesses: 差异分析中的测试用例
+        """
         cg_sources = []
         joern_cg_src = blackboard["merged_joern_cg"]
         soot_cg_src = blackboard["merged_soot_cg"]
@@ -887,7 +1263,17 @@ class DiffReachabilityReport:
         return cls(h_reach_list=h_reach_list)
 
     def merge(self, diff: "DiffReachabilityReport"):
-        """Merge another DiffReachability into this one."""
+        """
+        合并另一个差异可访问性报告
+        
+        Args:
+            diff: 要合并的报告
+            
+        合并策略：
+            - 为每个新的可访问性结果查找匹配的现有结果
+            - 如果找到匹配，调用merge方法合并
+            - 如果未找到匹配，添加到列表中
+        """
         for new_h in diff.h_reach_list:
             for old_h in self.h_reach_list:
                 if old_h.harness_name == new_h.harness_name:
